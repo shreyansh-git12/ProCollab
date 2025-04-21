@@ -22,7 +22,7 @@ import {
 import AddUser from "../components/AddUser";
 import axiosInstance from "@/config/axios";
 import { initSocket, receiveMessage, sendMessage } from "../config/socket";
-import Loading from "../components/Loading";
+import Loading from "../components/Loading.jsx";
 import Markdown from "markdown-to-jsx";
 
 function SyntaxHighlightedCode(props) {
