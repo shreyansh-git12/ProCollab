@@ -1,6 +1,4 @@
 import http from "http";
-import path from "path";
-import express from "express";
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
@@ -8,20 +6,12 @@ import projectModel from "./models/project.model.js";
 import { generateTextService } from "./services/geminiService.js";
 import app from "./app.js";
 
-const __dirname = path.resolve();
 const port = process.env.PORT || 3000;
 const server = http.createServer(app);
 
 console.log("🚀 Starting server setup...");
 
-// Serve static files from 'build' directory
-try {
-  app.use(express.static(path.join(__dirname, "build")));
-  console.log("✅ Static files middleware loaded.");
-} catch (err) {
-  console.error("❌ Error setting static files path:", err);
-}
-
+// Initialize Socket.IO server
 const io = new Server(server, {
   cors: {
     origin: "*",
@@ -102,11 +92,6 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     console.log(`🔴 Client disconnected from project ${socket.projectId}`);
   });
-});
-
-app.get("*", (req, res) => {
-  console.log(`🌐 Unknown route hit: ${req.originalUrl} — serving index.html`);
-  res.sendFile(path.join(__dirname, "build", "index.html"));
 });
 
 server.listen(port, () => {
