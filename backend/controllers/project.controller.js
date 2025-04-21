@@ -10,20 +10,42 @@ import { validationResult } from "express-validator";
 
 export const createProjectController = async (req, res) => {
   try {
+    // Log the incoming request for project creation
+    console.log("Received request to create project", req.body);
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log("Validation errors:", errors.array());
       return res.status(400).json({ errors: errors.array() });
     }
 
     const { name } = req.body;
-    const loggedInUser = await userModel.findOne(req.user._id);
+
+    // Log the user ID from the token
+    console.log("Logged-in user from token:", req.user._id);
+
+    // Find the user by ID
+    const loggedInUser = await userModel.findOne({ _id: req.user._id });
+    console.log("Found logged-in user:", loggedInUser);
+
+    if (!loggedInUser) {
+      console.log("User not found");
+      return res.status(400).json({ message: "User not found" });
+    }
 
     const userId = loggedInUser._id;
+    console.log("User ID extracted:", userId);
 
+    // Now log the data being passed to create the project
+    console.log("Creating project with name:", name, "and user ID:", userId);
+
+    // Create the project
     const newProject = await createProject({ name, userId });
+    console.log("Project created successfully:", newProject);
 
     return res.status(201).json(newProject);
   } catch (error) {
+    console.error("Error creating project:", error.message);
     return res.status(400).json({ message: error.message });
   }
 };
