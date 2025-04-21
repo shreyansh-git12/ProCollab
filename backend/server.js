@@ -1,13 +1,19 @@
 import http from "http";
-import app from "./app.js";
+import path from "path";
+import express from "express";
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import projectModel from "./models/project.model.js";
 import { generateTextService } from "./services/geminiService.js";
+import app from "./app.js";
 
+const __dirname = path.resolve(); // Needed for path resolving
 const port = process.env.PORT || 3000;
 const server = http.createServer(app);
+
+// Serve static files from 'build' directory
+app.use(express.static(path.join(__dirname, "build")));
 
 const io = new Server(server, {
   cors: {
@@ -61,7 +67,6 @@ io.use(async (socket, next) => {
 
 io.on("connection", (socket) => {
   console.log(`New client connected to project ${socket.projectId}`);
-
   socket.join(socket.projectId);
 
   socket.on("project-message", async (data) => {
@@ -75,13 +80,11 @@ io.on("connection", (socket) => {
 
       try {
         const result = await generateTextService(prompt);
-
         const aiMessage = {
           message: result,
           email: "@ai",
         };
 
-        // Broadcast AI response like a normal chat message
         io.to(socket.projectId).emit("project-message", aiMessage);
       } catch (error) {
         console.error("AI generation failed:", error);
@@ -90,13 +93,17 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // Normal user-to-user message
     socket.broadcast.to(socket.projectId).emit("project-message", data);
   });
 
   socket.on("disconnect", () => {
     console.log(`Client disconnected from project ${socket.projectId}`);
   });
+});
+
+// Handle SPA: always send index.html for unknown routes
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "build", "index.html"));
 });
 
 server.listen(port, () => {
