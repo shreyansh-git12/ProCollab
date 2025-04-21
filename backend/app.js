@@ -45,7 +45,7 @@ app.get("/", (req, res) => {
 });
 
 // Fallback route for all other requests (for SPA)
-app.get("/:catchAll(*)", (req, res) => {
+app.get("*", (req, res) => {
   console.log(`🌐 Unknown route hit: ${req.originalUrl} — serving index.html`);
   res.sendFile(path.join(__dirname, "build", "index.html"));
 });
