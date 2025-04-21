@@ -1,44 +1,104 @@
-import express from "express";
-import cors from "cors";
-import morgan from "morgan";
-import dotenv from "dotenv";
-import path from "path";
-import { fileURLToPath } from "url";
-import connect from "./db/db.js";
-import userRoutes from "./routes/user.routes.js";
-import projectRoutes from "./routes/project.routes.js";
-import geminiRoute from "./routes/geminiRoute.js";
-import cookieParser from "cookie-parser";
+import http from "http";
+import app from "./app.js";
+import { Server } from "socket.io";
+import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
+import projectModel from "./models/project.model.js";
+import { generateTextService } from "./services/geminiService.js";
 
-dotenv.config();
+const port = process.env.PORT || 3000;
+const server = http.createServer(app);
 
-console.log("🔧 REDIS_URL from .env:", process.env.REDIS_URL);
-
-connect();
-
-const app = express();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-app.use(morgan("dev"));
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
-
-app.use("/user", userRoutes);
-app.use("/project", projectRoutes);
-app.use("/api/gemini", geminiRoute);
-
-app.get("/", (req, res) => {
-  res.send("Hello World!");
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+  },
 });
 
-app.use(express.static(path.join(__dirname, "build")));
+const secretKey = process.env.JWT_SECRET || "your-secret-key";
 
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "build", "index.html"));
+io.use(async (socket, next) => {
+  try {
+    const token =
+      socket.handshake.auth.token ||
+      socket.handshake.headers.authorization?.split(" ")[1];
+
+    const projectId = socket.handshake.query.projectId;
+
+    if (!token) {
+      return next(new Error("Authentication token is missing"));
+    }
+
+    const decoded = jwt.verify(token, secretKey);
+
+    if (!decoded || !decoded.id) {
+      return next(new Error("Invalid authentication token"));
+    }
+
+    if (!projectId || !mongoose.Types.ObjectId.isValid(projectId)) {
+      return next(new Error("Invalid or missing projectId"));
+    }
+
+    const project = await projectModel.findOne({
+      _id: projectId,
+      users: decoded.id,
+    });
+
+    if (!project) {
+      return next(new Error("User not authorized for this project"));
+    }
+
+    socket.projectId = projectId;
+    socket.user = decoded;
+
+    console.log("✅ Socket authenticated:", socket.user);
+    next();
+  } catch (err) {
+    console.error("❌ Socket authentication error:", err.message);
+    next(new Error("Authentication error"));
+  }
 });
 
-export default app;
+io.on("connection", (socket) => {
+  console.log(`New client connected to project ${socket.projectId}`);
+
+  socket.join(socket.projectId);
+
+  socket.on("project-message", async (data) => {
+    const message = data.message;
+    console.log("Message received:", data);
+
+    const aiIsPresentInMessage = message.includes("@ai");
+
+    if (aiIsPresentInMessage) {
+      const prompt = message.replace("@ai", "").trim();
+
+      try {
+        const result = await generateTextService(prompt);
+
+        const aiMessage = {
+          message: result,
+          email: "@ai",
+        };
+
+        // Broadcast AI response like a normal chat message
+        io.to(socket.projectId).emit("project-message", aiMessage);
+      } catch (error) {
+        console.error("AI generation failed:", error);
+      }
+
+      return;
+    }
+
+    // Normal user-to-user message
+    socket.broadcast.to(socket.projectId).emit("project-message", data);
+  });
+
+  socket.on("disconnect", () => {
+    console.log(`Client disconnected from project ${socket.projectId}`);
+  });
+});
+
+server.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+});
