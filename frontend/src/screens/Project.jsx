@@ -400,7 +400,7 @@ const Project = () => {
 
           <div className="flex items-center gap-2 p-4 border-t">
             <Input
-              placeholder="Type your message..."
+              placeholder="use @ai for Ai responses"
               className="flex-1"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
