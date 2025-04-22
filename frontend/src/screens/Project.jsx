@@ -24,6 +24,7 @@ import axiosInstance from "@/config/axios";
 import { initSocket, receiveMessage, sendMessage } from "../config/socket";
 import Loading from "../components/Loading.jsx";
 import Markdown from "markdown-to-jsx";
+import hljs from "highlight.js";
 
 function SyntaxHighlightedCode(props) {
   const ref = useRef(null);
@@ -74,11 +75,7 @@ const Project = () => {
   const [user, setUser] = useState(null);
   const [awaitingAI, setAwaitingAI] = useState(false);
   const chatContainerRef = useRef(null);
-  const [fileTree, setFileTree] = useState({
-    "app.js": { content: "const server = require " },
-    "package.json": { content: "temporary server" },
-    "README.md": { content: "hello" },
-  });
+  const [fileTree, setFileTree] = useState({});
   const [openedFiles, setOpenedFiles] = useState([]);
   const [currentFile, setCurrentFile] = useState(null);
 
@@ -95,34 +92,125 @@ const Project = () => {
     let socketInitialized = false;
     const fetchUserAndSetupSocket = async () => {
       try {
+        console.log("useEffect - fetchUserAndSetupSocket: Starting");
         const res = await axiosInstance.get("/user/profile");
-        setUser(res.data.user);
+        const fetchedUser = res.data.user;
+        setUser(fetchedUser);
+        console.log(
+          "useEffect - fetchUserAndSetupSocket: User fetched:",
+          fetchedUser
+        );
+
         if (projectId && !socketInitialized) {
+          console.log(
+            "useEffect - fetchUserAndSetupSocket: projectId is",
+            projectId,
+            "and socket not initialized. Initializing socket."
+          );
           initSocket(projectId);
           socketInitialized = true;
+          console.log(
+            "useEffect - fetchUserAndSetupSocket: Socket initialized."
+          );
+
           receiveMessage("project-message", (data) => {
+            console.log("--- receiveMessage 'project-message' triggered ---");
+            console.log("receiveMessage - Full data object:", data);
+            console.log("receiveMessage - data.email:", data?.email);
+            console.log("receiveMessage - data.message (raw):", data?.message);
+
             const formattedMessage = {
               ...data,
               message:
-                data.email === "@ai" ? formatAIMessage(data) : data.message,
+                data?.email === "@ai" ? formatAIMessage(data) : data?.message,
             };
             setMessages((prev) => [...prev, formattedMessage]);
-            if (data.email === "@ai") setAwaitingAI(false);
+            console.log("receiveMessage - messages state updated:", messages);
+
+            if (data?.email === "@ai") {
+              console.log("receiveMessage - Message is from AI");
+              setAwaitingAI(false);
+              console.log("receiveMessage - awaitingAI set to false");
+
+              try {
+                // Extract JSON from markdown code block
+                const jsonMatch = data.message.match(/```json\n([\s\S]*)\n```/);
+                let jsonString = data.message;
+                if (jsonMatch && jsonMatch[1]) {
+                  jsonString = jsonMatch[1];
+                }
+
+                const parsedData = JSON.parse(jsonString);
+                const aiFileTree = parsedData?.fileTree;
+
+                console.log("receiveMessage - Parsed AI response:", parsedData);
+                console.log(
+                  "receiveMessage - Extracted aiFileTree:",
+                  aiFileTree
+                );
+
+                if (aiFileTree) {
+                  setFileTree(aiFileTree);
+                  console.log(
+                    "receiveMessage - After setFileTree, fileTree state:",
+                    fileTree // Make sure this log is *after* setFileTree
+                  );
+                  if (Object.keys(aiFileTree).length > 0) {
+                    openFile(Object.keys(aiFileTree)[0]);
+                  }
+                } else {
+                  console.log(
+                    "receiveMessage - aiFileTree is falsy or undefined in parsed data."
+                  );
+                }
+              } catch (error) {
+                console.error(
+                  "receiveMessage - Error processing AI message:",
+                  error
+                );
+              }
+            } else {
+              console.log(
+                "receiveMessage - Message not from AI, skipping fileTree logic"
+              );
+            }
           });
+        } else if (projectId && socketInitialized) {
+          console.log(
+            "useEffect - fetchUserAndSetupSocket: projectId is",
+            projectId,
+            "and socket is already initialized."
+          );
+        } else {
+          console.log(
+            "useEffect - fetchUserAndSetupSocket: projectId is null or undefined, or socket not initialized yet."
+          );
         }
       } catch (error) {
-        console.error("Error fetching user:", error);
+        console.error(
+          "useEffect - fetchUserAndSetupSocket: Error fetching user:",
+          error
+        );
       }
     };
 
     const fetchCollaborators = async () => {
       try {
+        console.log("useEffect - fetchCollaborators: Starting");
         const res = await axiosInstance.get(
           `/project/get-project/${projectId}`
         );
-        setCollaborators(res.data.project.users || []);
+        const fetchedCollaborators = res.data.project.users || [];
+        setCollaborators(fetchedCollaborators);
+        console.log(
+          "useEffect - fetchCollaborators: Collaborators fetched:",
+          fetchedCollaborators
+        );
       } catch (error) {
-        console.error("Error fetching collaborators:", error);
+        console.error(
+          "useEffect - fetchCollaborators: Error fetching collaborators:",
+          error
+        );
       }
     };
 
@@ -130,29 +218,68 @@ const Project = () => {
     fetchCollaborators();
 
     return () => {
+      console.log(
+        "useEffect - Cleanup: Unsubscribing from 'project-message' if socket exists."
+      );
       if (window.socketInstance) window.socketInstance.off("project-message");
     };
   }, [projectId]);
 
   useEffect(() => {
+    console.log(
+      "useEffect - chatContainerRef scroll effect triggered. messages length:",
+      messages.length
+    );
     if (chatContainerRef.current) {
+      console.log(
+        "useEffect - chatContainerRef scroll effect: Scrolling to bottom"
+      );
       chatContainerRef.current.scrollTo({
         top: chatContainerRef.current.scrollHeight,
         behavior: "smooth",
       });
+    } else {
+      console.log(
+        "useEffect - chatContainerRef scroll effect: chatContainerRef.current is null."
+      );
     }
   }, [messages]);
 
   const openFile = (fileName) => {
+    console.log("openFile: Attempting to open file:", fileName);
     if (!openedFiles.includes(fileName)) {
-      setOpenedFiles((prev) => [...prev, fileName]);
+      setOpenedFiles((prev) => {
+        const updatedOpenedFiles = [...prev, fileName];
+        console.log(
+          "openFile: File not opened, updated openedFiles:",
+          updatedOpenedFiles
+        );
+        return updatedOpenedFiles;
+      });
+    } else {
+      console.log("openFile: File already opened:", fileName);
     }
     setCurrentFile(fileName);
+    console.log("openFile: currentFile set to:", fileName);
   };
 
   const closeFile = (fileName) => {
-    setOpenedFiles((prev) => prev.filter((f) => f !== fileName));
-    if (currentFile === fileName) setCurrentFile(null);
+    console.log("closeFile: Attempting to close file:", fileName);
+    setOpenedFiles((prev) => {
+      const updatedOpenedFiles = prev.filter((f) => f !== fileName);
+      console.log("closeFile: updated openedFiles:", updatedOpenedFiles);
+      return updatedOpenedFiles;
+    });
+    if (currentFile === fileName) {
+      setCurrentFile(null);
+      console.log(
+        "closeFile: currentFile set to null as closed file was current."
+      );
+    } else {
+      console.log(
+        "closeFile: currentFile not changed as closed file was not current."
+      );
+    }
   };
 
   return (
@@ -334,7 +461,7 @@ const Project = () => {
 
             {currentFile ? (
               <textarea
-                className="w-full h-full p-4 resize-none focus:outline-none focus:ring-0 border-none"
+                className="w-full h-full p-4 resize-none focus:outline-none focus:ring-0 border-none bg-gray-900 text-white "
                 value={fileTree[currentFile]?.content}
                 onChange={(e) =>
                   setFileTree((prev) => ({
