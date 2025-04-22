@@ -11,7 +11,10 @@ import { validationResult } from "express-validator";
 export const createProjectController = async (req, res) => {
   try {
     // Log the incoming request for project creation
-    console.log("Received request to create project", req.body);
+    console.log("Received request to create project:", req.body);
+
+    // Log the decoded token and user from the request
+    console.log("User from token:", req.user);
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -21,11 +24,11 @@ export const createProjectController = async (req, res) => {
 
     const { name } = req.body;
 
-    // Log the user ID from the token
-    console.log("Logged-in user from token:", req.user._id);
+    // Log the user ID from the token (before using it)
+    console.log("Logged-in user ID from token:", req.user._id);
 
     // Find the user by ID
-    const loggedInUser = await userModel.findOne({ _id: req.user._id });
+    const loggedInUser = await userModel.findOne({ _id: req.user.id });
     console.log("Found logged-in user:", loggedInUser);
 
     if (!loggedInUser) {
